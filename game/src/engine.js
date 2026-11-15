@@ -1,6 +1,6 @@
 // engine.js — the game itself: state, input, the main loop, combat,
 // cycles, the boss fight, scoring, and the deterministic screenshot mode
-// (?shot=title|play|intense|gameover&seed=1) used for the entry's renders.
+// (?shot=title|play|intense|gameover|victory&seed=1) used for the entry's renders.
 
 // ---- State ----
 
@@ -98,6 +98,8 @@ function endRun(victory) {
   G.state = victory ? 'victory' : 'over';
   G.beaming = false;
   G.beamSegs = []; // no stray beam across the end screen
+  G.banner = ''; // no stale cycle banner over the end screen
+  G.bannerT = 0;
   G.audio.beamStop();
   if (victory) {
     G.audio.shatter();
@@ -632,10 +634,55 @@ function setupShot(shot) {
   if (shot === 'title') {
     G.state = 'title';
   } else if (shot === 'play') {
+    // Early gameplay, refraction on show: two prisms staged within chain
+    // range (283 < 300) so the beam splits through both and bites the
+    // opening wave, sparks and all.
     startRun();
-    placePrism(G.prisms, CX - 160, CY - 80, 0);
-    G.prismsPlaced = 1;
-    simulate(5);
+    placePrism(G.prisms, CX - 170, CY - 90, 0);
+    placePrism(G.prisms, CX + 110, CY - 130, 1);
+    G.prismsPlaced = 2;
+    simulate(6);
+    // Freeze a live split beam. Aim at the nearest enemy; if the wave is
+    // already cleared, aim through the first prism instead, so the frozen
+    // frame always shows a real refraction split, never a plain beam.
+    let best = null;
+    let bestD = Infinity;
+    for (const e of G.enemies) {
+      const d = dist(G.player.x, G.player.y, e.x, e.y);
+      if (d < bestD) {
+        bestD = d;
+        best = e;
+      }
+    }
+    if (best) {
+      G.player.aim = Math.atan2(best.y - G.player.y, best.x - G.player.x);
+    } else if (G.prisms.length) {
+      G.player.aim = Math.atan2(G.prisms[0].y - G.player.y, G.prisms[0].x - G.player.x);
+    }
+    G.beamSegs = traceBeam(G.prisms, G.player.x, G.player.y, G.player.aim, 0, [], []);
+    let touched = false;
+    for (const s of G.beamSegs) if (s.depth > 0) touched = true;
+    if (!touched && G.prisms.length) {
+      G.player.aim = Math.atan2(G.prisms[0].y - G.player.y, G.prisms[0].x - G.player.x);
+      G.beamSegs = traceBeam(G.prisms, G.player.x, G.player.y, G.player.aim, 0, [], []);
+    }
+    // Stage the wave ON the refracted beams: one mote on each of the first
+    // two post-prism segments, so the split light is visibly biting targets.
+    let staged = 0;
+    for (const s of G.beamSegs) {
+      if (staged >= 2) break;
+      if (s.depth < 1) continue;
+      const mx = clamp((s.x1 + s.x2) / 2, 60, W - 60);
+      const my = clamp((s.y1 + s.y2) / 2, 60, H - 60);
+      G.enemies.push(makeEnemy('mote', mx, my));
+      burst(G.particles, mx, my, COL.cyan, 6, 120, 0.6, 1);
+      staged++;
+    }
+    for (const p of G.prisms) burst(G.particles, p.x, p.y, COL.cyan, 8, 140, 0.6, 1);
+    if (best) G.texts.push(makeFloatText(best.x, best.y - 24, '+100', '#ffe9a8', 16));
+    G.combo = 3;
+    G.multiplier = 2;
+    G.resonance = 24;
   } else if (shot === 'intense') {
     // The boss fight: Cycle V, the Eclipse Leviathan on its orbit with its
     // minions, three prisms live and a beam mid-channel — the busiest frame.
@@ -668,6 +715,28 @@ function setupShot(shot) {
     G.prismsPlaced = 9;
     G.coreHp = 0;
     endRun(false);
+  } else if (shot === 'victory') {
+    // Victory, render-checked: the Leviathan falls and the Core burns
+    // bright again. Same boss staging as 'intense', then the run ends in
+    // victory with the core restored (it survived) and full-run stats.
+    startRun();
+    startCycle(4);
+    placePrism(G.prisms, CX - 170, CY - 90, 0);
+    placePrism(G.prisms, CX + 150, CY - 110, 1);
+    placePrism(G.prisms, CX + 40, CY + 170, 2);
+    G.prismsPlaced = 3;
+    simulate(11);
+    G.score = 18640;
+    G.maxCombo = 31;
+    G.maxMultiplier = 8;
+    G.ricochetKills = 57;
+    G.shotsFired = 150;
+    G.shotsHit = 118;
+    G.cyclesCleared = 5;
+    G.prismsPlaced = 12;
+    G.coreHp = CORE.hpMax;
+    if (G.boss) G.boss.hp = 0;
+    endRun(true);
   } else {
     return;
   }

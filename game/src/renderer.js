@@ -484,6 +484,19 @@ function bar(ctx, x, y, w, h, frac, fill, label, text) {
 
 function drawHUD(ctx, G) {
   ctx.save();
+  // HUD safe zone: a dark band top and bottom, so beams, enemies and
+  // particles crossing behind the HUD can never eat the text, whatever the
+  // beam geometry does. The band is its own layer, under the text.
+  const topGrad = ctx.createLinearGradient(0, 0, 0, 108);
+  topGrad.addColorStop(0, 'rgba(7,9,19,0.72)');
+  topGrad.addColorStop(1, 'rgba(7,9,19,0)');
+  ctx.fillStyle = topGrad;
+  ctx.fillRect(0, 0, W, 108);
+  const botGrad = ctx.createLinearGradient(0, H - 40, 0, H);
+  botGrad.addColorStop(0, 'rgba(7,9,19,0)');
+  botGrad.addColorStop(1, 'rgba(7,9,19,0.72)');
+  ctx.fillStyle = botGrad;
+  ctx.fillRect(0, H - 40, W, 40);
   // Top-left: Core Integrity + Aether Energy.
   const coreFrac = G.coreHp / CORE.hpMax;
   bar(ctx, 24, 40, 220, 12, coreFrac, coreFrac > 0.5 ? COL.good : COL.danger, 'CORE INTEGRITY', Math.ceil(G.coreHp) + '%');
@@ -546,8 +559,8 @@ function drawBanner(ctx, G) {
 
 // ---- Screens ----
 
-function screenShell(ctx, title, sub) {
-  ctx.fillStyle = 'rgba(7,9,19,0.72)';
+function screenShell(ctx, title, sub, alpha) {
+  ctx.fillStyle = 'rgba(7,9,19,' + (alpha === undefined ? 0.72 : alpha) + ')';
   ctx.fillRect(0, 0, W, H);
   ctx.textAlign = 'center';
   ctx.fillStyle = COL.brass;
@@ -558,10 +571,45 @@ function screenShell(ctx, title, sub) {
   ctx.fillText(sub, CX, 252);
 }
 
+// Title attract mode: a live refraction demo behind the title — three
+// prisms orbit the Chrono-Astrolabe Core and split the light in real time
+// (Cyan -> Amber -> Magenta). Presentation only: it reads G.time, so the
+// frozen title shot is stable too, and the title text is drawn last, on
+// top, so contrast never depends on where the prisms are.
+function drawTitleDemo(ctx, G, t) {
+  const demo = [];
+  for (let i = 0; i < 3; i++) {
+    const a = t * 0.22 + (i * Math.PI * 2) / 3;
+    const r = 215 + i * 45;
+    demo.push({
+      x: CX + Math.cos(a) * r,
+      y: CY + Math.sin(a) * r,
+      angle: a,
+      placedAt: 0,
+      flash: 0.55 + 0.35 * Math.sin(t * 2 + i * 2.1),
+    });
+  }
+  const segs = [];
+  function link(x1, y1, x2, y2, phase, depth) {
+    segs.push({ x1: x1, y1: y1, x2: x2, y2: y2, phase: phase, depth: depth });
+  }
+  link(CX, CY, demo[0].x, demo[0].y, 0, 0);
+  link(demo[0].x, demo[0].y, demo[1].x, demo[1].y, 1, 1);
+  link(demo[1].x, demo[1].y, demo[2].x, demo[2].y, 2, 2);
+  const out = Math.atan2(demo[2].y - demo[1].y, demo[2].x - demo[1].x);
+  link(demo[2].x, demo[2].y, demo[2].x + Math.cos(out + 0.45) * 190, demo[2].y + Math.sin(out + 0.45) * 190, 0, 3);
+  link(demo[2].x, demo[2].y, demo[2].x + Math.cos(out - 0.45) * 190, demo[2].y + Math.sin(out - 0.45) * 190, 2, 3);
+  drawBeamSegments(ctx, segs, t);
+  for (const p of demo) drawPrism(ctx, p, t);
+}
+
 function drawTitle(ctx, G) {
   drawBackground(ctx, G.time);
   drawCore(ctx, G, G.time);
-  screenShell(ctx, 'LUMENWEAVE', 'P R I S M   W A R D E N');
+  drawTitleDemo(ctx, G, G.time);
+  // A lighter scrim than the other screens (0.55): the demo light stays
+  // visible around the text while the text itself stays sharp on top.
+  screenShell(ctx, 'LUMENWEAVE', 'P R I S M   W A R D E N', 0.55);
   ctx.save();
   ctx.textAlign = 'center';
   ctx.fillStyle = COL.dim;
@@ -642,6 +690,61 @@ function drawGameOver(ctx, G) {
   ctx.restore();
 }
 
+// Shattered-core dressing for the Game Over screen: a dim ember glow plus
+// jagged cracks across the drained orb, so the backdrop is never empty
+// dark. Fixed geometry (no per-frame randomness), so the frozen game-over
+// shot is stable.
+function drawCoreCracks(ctx, t) {
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  const ember = 0.16 + 0.07 * Math.sin(t * 1.1);
+  const glow = ctx.createRadialGradient(CX, CY, 10, CX, CY, 170);
+  glow.addColorStop(0, 'rgba(255,84,112,' + ember + ')');
+  glow.addColorStop(1, 'rgba(255,84,112,0)');
+  ctx.fillStyle = glow;
+  ctx.beginPath();
+  ctx.arc(CX, CY, 170, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.globalCompositeOperation = 'source-over';
+  ctx.strokeStyle = 'rgba(20,6,12,0.85)';
+  ctx.lineWidth = 2.5;
+  // Cracks run past the orb's edge (to r≈78) so they show around the
+  // stats text, not only behind it.
+  const cracks = [0.3, 1.2, 2.1, 2.9, 3.8, 5.0];
+  for (let i = 0; i < cracks.length; i++) {
+    const a = cracks[i];
+    const j1 = (i % 3) - 1;
+    ctx.beginPath();
+    ctx.moveTo(CX + Math.cos(a) * 8, CY + Math.sin(a) * 8);
+    ctx.lineTo(CX + Math.cos(a + j1 * 0.22) * 30, CY + Math.sin(a + j1 * 0.22) * 30);
+    ctx.lineTo(CX + Math.cos(a - j1 * 0.18) * 78, CY + Math.sin(a - j1 * 0.18) * 78);
+    ctx.stroke();
+  }
+  // Glowing fissure rims, so the cracks read as hot splits, not scratches.
+  ctx.strokeStyle = 'rgba(255,120,90,0.55)';
+  ctx.lineWidth = 1;
+  for (let i = 0; i < cracks.length; i++) {
+    const a = cracks[i];
+    const j1 = (i % 3) - 1;
+    ctx.beginPath();
+    ctx.moveTo(CX + Math.cos(a) * 8, CY + Math.sin(a) * 8);
+    ctx.lineTo(CX + Math.cos(a + j1 * 0.22) * 30, CY + Math.sin(a + j1 * 0.22) * 30);
+    ctx.lineTo(CX + Math.cos(a - j1 * 0.18) * 78, CY + Math.sin(a - j1 * 0.18) * 78);
+    ctx.stroke();
+  }
+  // Faint embers drifting around the dead core.
+  ctx.fillStyle = 'rgba(255,120,90,0.7)';
+  for (let i = 0; i < 8; i++) {
+    const a = (i / 8) * Math.PI * 2 + 0.4;
+    const r = 70 + ((i * 37) % 90);
+    const y = CY + Math.sin(a) * r + Math.sin(t * 0.7 + i) * 6;
+    ctx.beginPath();
+    ctx.arc(CX + Math.cos(a) * r, y, 2.5, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
 // Master draw: world first, then HUD, then the screen overlay for the state.
 function drawGame(ctx, G) {
   ctx.save();
@@ -650,8 +753,12 @@ function drawGame(ctx, G) {
   }
   drawBackground(ctx, G.time);
   drawCore(ctx, G, G.time);
-  for (const p of G.prisms) drawPrism(ctx, p, G.time);
-  if (G.state === 'play' || G.state === 'over' || G.state === 'victory') {
+  if (G.state === 'over') drawCoreCracks(ctx, G.time);
+  // Live entities render only while playing (or paused, frozen mid-run).
+  // End screens ('over' / 'victory') show a clean backdrop: no stray
+  // player, enemy, bolt, orb or prism sprites behind the stats overlay.
+  if (G.state === 'play' || G.state === 'paused') {
+    for (const p of G.prisms) drawPrism(ctx, p, G.time);
     drawBeamSegments(ctx, G.beamSegs, G.time);
     if (G.convergenceT > 0) drawConvergenceWeb(ctx, G, G.time);
     drawBolts(ctx, G.bolts);

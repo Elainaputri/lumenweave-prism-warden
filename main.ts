@@ -1,5 +1,11 @@
 // Lumenweave: Prism Warden — entry program (Node 22, standard library only).
 //
+// v2 (2026-11-16): title attract-mode demo, HUD safe-zone scrims, clean
+// end screens (no entity sprites behind the stats overlay), and a
+// ?shot=victory render mode — all inside game/src/*.js; this file's build
+// (concatenate the fragments in fixed order, copy game/ + screenshots/,
+// write dossier.json) is unchanged and still fully deterministic.
+//
 // What it does, in order:
 //   1. Builds the playable bundle: game/src/*.js are plain JavaScript
 //      fragments (no imports between them, one clear job each) that
