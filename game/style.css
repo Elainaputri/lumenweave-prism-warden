@@ -1,0 +1,40 @@
+/* Lumenweave: Prism Warden — full-viewport dark framing, system fonts only.
+   The canvas keeps its 1280x720 internal resolution and scales to fit the
+   window while preserving the 16:9 aspect ratio. */
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body {
+  height: 100%;
+  background: #070913;
+}
+
+body {
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  color: #e8ecff;
+  overflow: hidden;
+}
+
+#stage {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100vw;
+  height: 100vh;
+  background:
+    radial-gradient(ellipse at center, #0b0f24 0%, #070913 70%);
+}
+
+#game {
+  display: block;
+  width: min(100vw, calc(100vh * 16 / 9));
+  height: min(100vh, calc(100vw * 9 / 16));
+  background: #070913;
+  box-shadow: 0 0 60px rgba(200, 157, 84, 0.12), 0 0 0 1px rgba(200, 157, 84, 0.25);
+  cursor: crosshair;
+}
